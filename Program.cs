@@ -5,6 +5,16 @@ using System.Configuration;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using System.Diagnostics;
+
+using IHost host = Host.CreateDefaultBuilder(args).Build();
+
+// Ask the service provider for the configuration abstraction.
+IConfiguration config = host.Services.GetRequiredService<IConfiguration>();
+
 
 // See https://aka.ms/new-console-template for more information
 Console.OutputEncoding = Encoding.UTF8;
@@ -39,11 +49,7 @@ while (true)
     charcodes = Encoding.UTF8.GetString(bytes);
 
     var rand = new Random();
-    int codelen = 3; // length of returned strings
-    if (!File.Exists("codelen.txt"))
-    {
-        File.WriteAllText("codelen.txt", "3");
-    }
+    int codelen = Convert.ToInt32(config["options:codelen"]); // length of returned strings
     int amount = 0; // amount of strings to return - prep
 
     bool trycatch = true;
@@ -51,12 +57,15 @@ while (true)
     {
         try
         {
-            codelen = Convert.ToInt32(File.ReadAllText("codelen.txt"));
+            //codelen = Convert.ToInt32(File.ReadAllText("codelen.txt"));
+
             Console.WriteLine("old len: " + olenght);
             Console.WriteLine("codelen: " + codelen);
+            Console.WriteLine("threads: " + config["options:threads"]);
             Console.WriteLine("maxcodes:" + (Math.Pow(charcodes.Length, codelen) - olenght));
             Console.WriteLine("How many codes?: ");
             amount = Convert.ToInt32(Console.ReadLine());
+            codelen = Convert.ToInt32(config["options:codelen"]);
             if (!File.Exists("codesuccess\\.netOutput.txt"))
             {
                 output.Clear();
@@ -68,7 +77,7 @@ while (true)
             }
             trycatch = false;
         }
-        catch (FormatException e)
+        catch (FormatException)
         {
             Console.WriteLine("Invalid Input: Not An INTEGER");
         }
@@ -84,6 +93,8 @@ while (true)
     }
 
     DateTime startTime = DateTime.Now;
+    Stopwatch startWatch = new Stopwatch();
+    startWatch.Start();
     if (amount == -1)
     {
         List<int> ints = new List<int>();
@@ -119,31 +130,73 @@ while (true)
                 temp += charcodes[x];
             }
             output.Add(temp);
-            if (progress % Math.Round(Math.Pow(charcodes.Length, codelen)/100) == 0)
+            if (progress % Math.Round(Math.Pow(charcodes.Length, codelen) / 100) == 0)
             {
-                Console.WriteLine("Progress: " + progress + " | " + Math.Pow(charcodes.Length, codelen) + " -- " + (Math.Round((progress/Math.Pow(charcodes.Length, codelen)) * 100)) + "% -- "+(DateTime.Now - startTime).ToString());
+                Console.WriteLine("Progress: " + progress + " | " + Math.Pow(charcodes.Length, codelen) + " -- " + (Math.Round((progress / Math.Pow(charcodes.Length, codelen)) * 100)) + "% -- " + (DateTime.Now - startTime).ToString());
             }
 
         }
     }
     else
     {
-        while (output.Count() - olenght < amount && output.Count() < Math.Pow(charcodes.Length, codelen))
+        //while (output.Count() - olenght < amount && output.Count() < Math.Pow(charcodes.Length, codelen))
+        //{
+        //    string temp = "";
+        //    for (int y = codelen; y > 0; y--)
+        //    {
+        //        temp += charcodes[rand.Next(0, charcodes.Length - 1)];
+        //    }
+        //    output.Add(temp);
+        //}
+        int threads = Convert.ToInt32(config["options:threads"]);
+        List<Task> tasks = new List<Task>();
+        object lockObject = new object();
+        int outputCount = output.Count() - olenght;
+        void codegenThreads()
         {
-            string temp = "";
-            for (int y = codelen; y > 0; y--)
+            HashSet<string> strings = new HashSet<string>();
+
+            while (outputCount < amount && outputCount < Math.Pow(charcodes.Length, codelen) && ((amount - outputCount) / threads + threads)  > strings.Count())
             {
-                temp += charcodes[rand.Next(0, charcodes.Length - 1)];
+                string temp = "";
+                for (int y = codelen; y > 0; y--)
+                {
+                    temp += charcodes[rand.Next(0, charcodes.Length - 1)];
+                }
+                strings.Add(temp);
             }
-            output.Add(temp);
+            lock (lockObject)
+            {
+                output.UnionWith(strings);
+                // outputCount = output.Count() - olenght;
+            }
+            Console.WriteLine("Added: " + strings.Count());
         }
+        async Task RandGenParAsync()
+        {
+            //tasks.Add(Task.Run(() => codegenMain()));
+            // Int32.Parse(config["settings:threads"])
+            for (int i = threads; i > 0; i--)
+            {
+                tasks.Add(Task.Run(() => codegenThreads()));
+            }
+            await Task.WhenAll(tasks);
+        }
+        while ((output.Count() - olenght) < amount && (output.Count() < Math.Pow(charcodes.Length, codelen)))
+        {
+            await RandGenParAsync();
+            outputCount = output.Count() - olenght;
+            Console.WriteLine("Current: " + outputCount);
+        }
+        int countrem = (output.Count - olenght) - amount;
+        output.RemoveWhere(x => countrem-- > 0);
     }
 
 
+    startWatch.Stop();
 
-
-    Console.WriteLine("------\n" + "Finish time: " + (DateTime.Now - startTime).ToString() +
-        "\nAmount Requested: " + amount);
+    Console.WriteLine("------\n" + "Finish time: " + (startWatch.Elapsed).ToString() +
+        "\nAmount Generated: " + (output.Count() - olenght));
     Console.WriteLine("Requested: " + amount.ToString() + " at: " + (DateTime.Now).ToString());
 
 
