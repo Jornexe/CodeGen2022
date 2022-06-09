@@ -1,10 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Collections.Generic;
-using System.Configuration;
-using System.Collections.Specialized;
-using System.Linq;
-using System.Text;
+﻿using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -50,7 +44,7 @@ while (true)
 
     var rand = new Random();
     int codelen = Convert.ToInt32(config["options:codelen"]); // length of returned strings
-    int amount = 0; // amount of strings to return - prep
+    int amount = -2; // amount of strings to return - prep
 
     bool trycatch = true;
     while (trycatch)
@@ -102,15 +96,16 @@ while (true)
         {
             ints.Add(0);
         }
+        int intslen = codelen;
         int progress = 0;
         while (!ints.All(a => a >= charcodes.Length - 1))
         {
             progress++;
             string temp = "";
-            ints[ints.Count() - 1]++;
+            ints[intslen - 1]++;
             if (ints.Any(x => x > charcodes.Length - 1))
             {
-                for (int x = ints.Count() - 1; x >= 0; x--)
+                for (int x = intslen - 1; x >= 0; x--)
                 {
                     if (ints[x] > charcodes.Length - 1)
                     {
@@ -118,12 +113,13 @@ while (true)
                         {
                             ints[x] = 0;
                         }
-                        if (x - 1 >= 0 && x - 1 <= ints.Count())
+                        if (x - 1 >= 0 && x - 1 <= intslen)
                         {
                             ints[x - 1]++;
                         }
                     }
                 }
+
             }
             foreach (int x in ints)
             {
@@ -132,10 +128,57 @@ while (true)
             output.Add(temp);
             if (progress % Math.Round(Math.Pow(charcodes.Length, codelen) / 100) == 0)
             {
-                Console.WriteLine("Progress: " + progress + " | " + Math.Pow(charcodes.Length, codelen) + " -- " + (Math.Round((progress / Math.Pow(charcodes.Length, codelen)) * 100)) + "% -- " + (DateTime.Now - startTime).ToString());
+                Console.WriteLine("Progress: " + progress + " | " + Math.Pow(charcodes.Length, codelen) + " -- "
+                    + (Math.Round((progress / Math.Pow(charcodes.Length, codelen)) * 100)) + "% -- " +
+                    (DateTime.Now - startTime).ToString());
             }
 
         }
+    }
+    else if (amount <= -2)
+    {
+        List<int> ints = new List<int>();
+        for (int i = 0; i < codelen; i++)
+        {
+            ints.Add(0);
+        }
+        Console.WriteLine("--Test Mode--");
+        //Console.WriteLine(String.Join(" ", ints.ToArray()));
+        Stopwatch debugwatch = new Stopwatch();
+        debugwatch.Start();
+        for (int i = Convert.ToInt32(Math.Pow(charcodes.Length, codelen)); i > 0; i--)
+        {
+            string temp = "";
+            foreach (int x in ints)
+            {
+                temp += charcodes[x];
+            }
+            output.Add(temp);
+
+            ints[codelen - 1]++;
+            if (ints.Any(x => x >= charcodes.Length - 1))
+            {
+                for (int z = ints.Count; z > 0; z--)
+                {
+                    List<int> indexes = ints.Select((v, i) => new { v, i })
+                        .Where(x => x.v > charcodes.Length - 1)
+                        .Select(x => x.i).ToList();
+
+                    foreach (int index in indexes)
+                    {
+                        ints[index] = 0;
+                        if (index >= 1 && index <= codelen)
+                        {
+                            ints[index - 1]++;
+                        }
+                    }
+
+                }
+            }
+        }
+        debugwatch.Stop();
+        Console.WriteLine(debugwatch.Elapsed);
+
     }
     else
     {
@@ -156,7 +199,7 @@ while (true)
         {
             HashSet<string> strings = new HashSet<string>();
 
-            while (outputCount < amount && outputCount < Math.Pow(charcodes.Length, codelen) && ((amount - outputCount) / threads + threads)  > strings.Count())
+            while (outputCount < amount && outputCount < Math.Pow(charcodes.Length, codelen) && ((amount - outputCount) / threads + threads) > strings.Count())
             {
                 string temp = "";
                 for (int y = codelen; y > 0; y--)
@@ -186,7 +229,7 @@ while (true)
         {
             await RandGenParAsync();
             outputCount = output.Count() - olenght;
-            Console.WriteLine("Current: " + outputCount);
+            Console.WriteLine("Current: " + outputCount + " - " + amount);
         }
         int countrem = (output.Count - olenght) - amount;
         output.RemoveWhere(x => countrem-- > 0);
